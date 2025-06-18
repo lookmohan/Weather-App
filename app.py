@@ -229,11 +229,13 @@ def main():
                     display_forecast_chart(forecast)
 
                     st.subheader("AI Summary")
-                    st.write(generate_weather_description(weather, huggingface_api_key))
+                    summary = generate_weather_description(weather, huggingface_api_key)
+                    st.write(summary)
 
-                    pdf_path = generate_forecast_pdf(forecast)
+                    pdf_path = generate_forecast_pdf(forecast, summary)
                     with open(pdf_path, "rb") as f:
                         st.download_button("📄 Download Forecast PDF", f, file_name="forecast.pdf")
+
             except Exception as e:
                 st.error(f"Forecast error: {str(e)}")
 
