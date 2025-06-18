@@ -4,3 +4,4 @@ requests
 fpdf
 matplotlib
 pandas
+Pillow>=9.0.0
