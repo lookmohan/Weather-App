@@ -226,7 +226,7 @@ def main():
                     st.markdown(f"> {summary}")
 
                 st.subheader("📄 Download Forecast")
-                pdf_path = generate_forecast_pdf(forecast_data)
+                pdf_path = generate_forecast_pdf(forecast_data,weather_data)
                 with open(pdf_path, "rb") as f:
                     st.download_button("Download Forecast PDF", f, file_name="forecast.pdf")
 
