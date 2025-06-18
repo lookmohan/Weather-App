@@ -93,7 +93,7 @@ def generate_forecast_pdf(data, summary_text):
                 pdf.image(icon_path, x=10, y=pdf.get_y(), w=10, h=10)
                 pdf.set_xy(22, pdf.get_y())
 
-            pdf.multi_cell(0, 10, f"{date} - {desc} - Min: {min_temp:.1f}°C Max: {max_temp:.1f}°C", ln=True)
+            pdf.multi_cell(0, 10, f"{date} - {desc} - Min: {min_temp:.1f}°C Max: {max_temp:.1f}°C")
             pdf.ln(1)
 
     # Add weather chart
