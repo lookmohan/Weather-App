@@ -239,8 +239,11 @@ def main():
                 
                 col1, col2 = st.columns([1, 2])
                 with col1:
-                    st_lottie(animation, height=200, key="weather_anim")
-                
+                    if animation:
+                        st_lottie(animation, height=200, key="weather_anim")
+                    else:
+                        st.warning("⚠️ Animation failed to load.")
+
                 with col2:
                     st.markdown(f"""
                     <div style="background: white; border-radius: 10px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
