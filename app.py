@@ -5,79 +5,83 @@ from datetime import datetime
 from fpdf import FPDF
 import matplotlib.pyplot as plt
 import os
+from streamlit_lottie import st_lottie
 import pandas as pd
 
+# Initialize session state
 if 'get_weather' not in st.session_state:
-    st.session_state.get_weather = False
+    st.session_state['get_weather'] = False
 
-# Load API keys
-weather_api_key = st.secrets["WAK"]
-huggingface_api_key = st.secrets["HAK"]
+# Load API keys with error handling
+try:
+    weather_api_key = st.secrets["WAK"]
+    huggingface_api_key = st.secrets["HAK"]
+except Exception as e:
+    st.error(f"Error loading API keys: {str(e)}")
+    st.stop()
 
-# Function to get current weather data
+# Safe Lottie animation loader
+def load_lottieurl(url):
+    try:
+        r = requests.get(url, timeout=5)
+        if r.status_code == 200:
+            return r.json()
+        return None
+    except Exception:
+        return None
+
+# Load Lottie animations with fallbacks
+lottie_weather = load_lottieurl("https://assets10.lottiefiles.com/packages/lf20_5tkzkblw.json") or {}
+lottie_sunny = load_lottieurl("https://assets4.lottiefiles.com/packages/lf20_pmvvvcdb.json") or lottie_weather
+lottie_rainy = load_lottieurl("https://assets8.lottiefiles.com/packages/lf20_kcsr6fcp.json") or lottie_weather
+lottie_cloudy = load_lottieurl("https://assets2.lottiefiles.com/packages/lf20_1pxqjqps.json") or lottie_weather
+
+# Weather data functions
 def get_weather_data(city, weather_api_key):
-    base_url = "http://api.openweathermap.org/data/2.5/weather?"
-    complete_url = f"{base_url}appid={weather_api_key}&q={city}"
-    response = requests.get(complete_url)
-    return response.json()
+    try:
+        base_url = "http://api.openweathermap.org/data/2.5/weather?"
+        complete_url = f"{base_url}appid={weather_api_key}&q={city}"
+        response = requests.get(complete_url, timeout=10)
+        return response.json()
+    except Exception:
+        return {"cod": "500", "message": "Connection error"}
 
-# Function to get 5-day forecast
 def get_weekly_forecast(weather_api_key, lat, lon):
-    forecast_url = f"https://api.openweathermap.org/data/2.5/forecast?lat={lat}&lon={lon}&appid={weather_api_key}"
-    response = requests.get(forecast_url)
-    return response.json()
+    try:
+        forecast_url = f"https://api.openweathermap.org/data/2.5/forecast?lat={lat}&lon={lon}&appid={weather_api_key}"
+        response = requests.get(forecast_url, timeout=10)
+        return response.json()
+    except Exception:
+        return {"cod": "500", "message": "Connection error"}
 
-# Function to generate forecast PDF
-def generate_forecast_pdf(forecast_data):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=12)
-    pdf.cell(200, 10, txt="Weekly Weather Forecast", ln=True, align='C')
-    pdf.ln()
-
-    displayed_dates = set()
-
-    for item in forecast_data['list']:
-        date = datetime.fromtimestamp(item['dt']).strftime('%A, %B %d')
-        if date not in displayed_dates:
-            displayed_dates.add(date)
-            min_temp = item['main']['temp_min'] - 273.15
-            max_temp = item['main']['temp_max'] - 273.15
-            description = item['weather'][0]['description']
-            pdf.cell(0, 10, txt=f"{date} - {description.title()} - Min: {min_temp:.1f}C Max: {max_temp:.1f}C", ln=True)
-
-    path = "forecast.pdf"
-    pdf.output(path)
-    return path
-
-# Function to display forecast chart
 def display_forecast_chart(data):
-    dates = []
-    temps = []
+    try:
+        dates = []
+        temps = []
+        for item in data['list']:
+            dt = datetime.fromtimestamp(item['dt']).strftime('%d %b %H:%M')
+            temp = item['main']['temp'] - 273.15
+            dates.append(dt)
+            temps.append(temp)
 
-    for item in data['list']:
-        dt = datetime.fromtimestamp(item['dt']).strftime('%d %b %H:%M')
-        temp = item['main']['temp'] - 273.15
-        dates.append(dt)
-        temps.append(temp)
+        plt.figure(figsize=(12, 6))
+        plt.plot(dates, temps, marker='o', color='#4CAF50', linewidth=2, markersize=8)
+        plt.xticks(rotation=45)
+        plt.title("5-Day Temperature Forecast", fontsize=14, pad=20)
+        plt.xlabel("DateTime", fontsize=12)
+        plt.ylabel("Temperature (°C)", fontsize=12)
+        plt.tight_layout()
+        plt.grid(True, linestyle='--', alpha=0.7)
+        plt.savefig("forecast_chart.png", transparent=True)
+        st.image("forecast_chart.png")
+    except Exception as e:
+        st.error(f"Chart generation error: {str(e)}")
 
-    plt.figure(figsize=(12, 6))
-    plt.plot(dates, temps, marker='o', color='#4CAF50', linewidth=2, markersize=8)
-    plt.xticks(rotation=45)
-    plt.title("5-Day Temperature Forecast", fontsize=14, pad=20)
-    plt.xlabel("DateTime", fontsize=12)
-    plt.ylabel("Temperature (Celsius)", fontsize=12)
-    plt.tight_layout()
-    plt.grid(True, linestyle='--', alpha=0.7)
-    plt.savefig("forecast_chart.png", transparent=True)
-    st.image("forecast_chart.png")
-
-# Hugging Face AI Summary Function
 def generate_weather_description(data, huggingface_api_key):
     try:
         temperature = data['main']['temp'] - 273.15
         description = data['weather'][0]['description']
-        prompt = f"The current weather in your city is {description} with a temperature of {temperature:.1f}C. Explain this in a simple way."
+        prompt = f"The current weather in your city is {description} with a temperature of {temperature:.1f}°C. Explain this in a simple way."
 
         api_url = "https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta"
         headers = {
@@ -89,38 +93,93 @@ def generate_weather_description(data, huggingface_api_key):
             "parameters": {"max_new_tokens": 60}
         }
 
-        response = requests.post(api_url, headers=headers, json=payload)
-
+        response = requests.post(api_url, headers=headers, json=payload, timeout=10)
         if response.status_code == 200:
-            try:
-                result = response.json()
-                if isinstance(result, list) and 'generated_text' in result[0]:
-                    return result[0]['generated_text'].strip()
-                else:
-                    return json.dumps(result)
-            except json.JSONDecodeError:
-                return "AI Summary Error: Invalid JSON received from Hugging Face."
-        else:
-            return f"Hugging Face API error: {response.status_code} - {response.text}"
+            result = response.json()
+            if isinstance(result, list) and len(result) > 0:
+                return result[0].get('generated_text', '').strip()
+        return "Weather summary unavailable right now"
+    except Exception:
+        return "Weather description service unavailable"
 
+def get_weather_animation(weather_condition):
+    if not weather_condition:
+        return lottie_weather
+    weather_condition = weather_condition.lower()
+    if 'rain' in weather_condition:
+        return lottie_rainy
+    elif 'clear' in weather_condition:
+        return lottie_sunny
+    elif 'cloud' in weather_condition:
+        return lottie_cloudy
+    return lottie_weather
+
+def generate_forecast_pdf(forecast_data, city, current_weather):
+    try:
+        pdf = FPDF()
+        pdf.add_page()
+
+        pdf.set_font("Arial", 'B', 16)
+        pdf.cell(200, 10, txt=f"Weather Forecast Report for {city}", ln=True, align='C')
+        pdf.ln(10)
+
+        pdf.set_font("Arial", 'B', 14)
+        pdf.cell(200, 10, txt="Current Weather", ln=True)
+        pdf.set_font("Arial", '', 12)
+
+        current_temp = current_weather['main']['temp'] - 273.15
+        weather_desc = current_weather['weather'][0]['description'].title()
+
+        pdf.multi_cell(0, 10, txt=(
+            f"Temperature: {current_temp:.1f}°C\n"
+            f"Conditions: {weather_desc}\n"
+            f"Humidity: {current_weather['main']['humidity']}%\n"
+            f"Pressure: {current_weather['main']['pressure']} hPa\n"
+            f"Wind Speed: {current_weather['wind']['speed']} m/s"
+        ))
+
+        if os.path.exists("forecast_chart.png"):
+            pdf.ln(10)
+            pdf.set_font("Arial", 'B', 14)
+            pdf.cell(200, 10, txt="5-Day Forecast", ln=True)
+            pdf.image("forecast_chart.png", x=10, w=190)
+
+        pdf.ln(10)
+        pdf.set_font("Arial", 'B', 14)
+        pdf.cell(200, 10, txt="Daily Forecast", ln=True)
+
+        daily_data = {}
+        for item in forecast_data['list']:
+            date = datetime.fromtimestamp(item['dt']).strftime('%A, %B %d')
+            if date not in daily_data:
+                daily_data[date] = []
+            daily_data[date].append(item)
+
+        for date, items in daily_data.items():
+            pdf.set_font("Arial", 'B', 12)
+            pdf.cell(0, 10, txt=date, ln=True)
+
+            temps = [item['main']['temp'] - 273.15 for item in items]
+            min_temp, max_temp = min(temps), max(temps)
+
+            pdf.set_font("Arial", '', 10)
+            pdf.cell(0, 8, txt=f"High: {max_temp:.1f}°C, Low: {min_temp:.1f}°C", ln=True)
+
+            conditions = list(set(item['weather'][0]['description'].title() for item in items))
+            pdf.cell(0, 8, txt=f"Conditions: {', '.join(conditions)}", ln=True)
+            pdf.ln(5)
+
+        pdf.ln(10)
+        pdf.set_font("Arial", 'I', 8)
+        pdf.cell(0, 10, txt=f"Generated on {datetime.now().strftime('%Y-%m-%d %H:%M')}", ln=True, align='C')
+
+        path = f"weather_forecast_{city}.pdf"
+        pdf.output(path)
+        return path
     except Exception as e:
-        return f"AI Summary Error: {str(e)}"
+        st.error(f"PDF generation error: {str(e)}")
+        return None
 
-# Emoji icons for weather conditions
-def get_weather_icon(condition):
-    condition = condition.lower()
-    if 'rain' in condition:
-        return "🌧️"
-    elif 'clear' in condition:
-        return "☀️"
-    elif 'cloud' in condition:
-        return "☁️"
-    elif 'snow' in condition:
-        return "❄️"
-    elif 'thunder' in condition:
-        return "⚡"
-    else:
-        return "🌡️"
 
 # Streamlit app
 def main():
