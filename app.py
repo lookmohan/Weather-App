@@ -47,24 +47,116 @@ def get_weekly_forecast(api_key, lat, lon):
     url = f"https://api.openweathermap.org/data/2.5/forecast?lat={lat}&lon={lon}&appid={api_key}"
     return requests.get(url).json()
 
-def generate_forecast_pdf(data):
+def generate_forecast_pdf(forecast_data, city, current_weather):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", size=12)
-    pdf.cell(200, 10, txt="Weekly Weather Forecast", ln=True, align='C')
-    pdf.ln()
-
-    seen_dates = set()
-    for item in data['list']:
+    
+    # Add title with city name
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(200, 10, txt=f"Weather Forecast Report for {city}", ln=True, align='C')
+    pdf.ln(10)
+    
+    # Add current weather summary
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(200, 10, txt="Current Weather Summary", ln=True)
+    pdf.set_font("Arial", '', 12)
+    
+    # Current weather details
+    current_temp = current_weather['main']['temp'] - 273.15
+    weather_desc = current_weather['weather'][0]['description'].title()
+    humidity = current_weather['main']['humidity']
+    pressure = current_weather['main']['pressure']
+    wind_speed = current_weather['wind']['speed']
+    
+    pdf.multi_cell(0, 10, txt=f"""
+    Temperature: {current_temp:.1f}°C
+    Conditions: {weather_desc}
+    Humidity: {humidity}%
+    Pressure: {pressure} hPa
+    Wind Speed: {wind_speed} m/s
+    """)
+    
+    pdf.ln(10)
+    
+    # Add forecast chart image
+    if os.path.exists("forecast_chart.png"):
+        pdf.set_font("Arial", 'B', 14)
+        pdf.cell(200, 10, txt="5-Day Temperature Forecast", ln=True)
+        pdf.image("forecast_chart.png", x=10, w=190)
+        pdf.ln(10)
+    
+    # Detailed daily forecast
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(200, 10, txt="Detailed Daily Forecast", ln=True)
+    pdf.set_font("Arial", '', 12)
+    
+    # Group forecast by day
+    daily_forecast = {}
+    for item in forecast_data['list']:
         date = datetime.fromtimestamp(item['dt']).strftime('%A, %B %d')
-        if date not in seen_dates:
-            seen_dates.add(date)
-            min_temp = item['main']['temp_min'] - 273.15
-            max_temp = item['main']['temp_max'] - 273.15
-            desc = item['weather'][0]['description']
-            pdf.cell(0, 10, txt=f"{date}: {desc.title()}, {min_temp:.1f}°C to {max_temp:.1f}°C", ln=True)
-
-    path = "forecast.pdf"
+        if date not in daily_forecast:
+            daily_forecast[date] = []
+        daily_forecast[date].append(item)
+    
+    # Add forecast for each day
+    for date, forecasts in daily_forecast.items():
+        pdf.set_font("Arial", 'B', 12)
+        pdf.cell(0, 10, txt=date, ln=True)
+        
+        # Get min/max temps for the day
+        min_temp = min(f['main']['temp_min'] for f in forecasts) - 273.15
+        max_temp = max(f['main']['temp_max'] for f in forecasts) - 273.15
+        avg_humidity = sum(f['main']['humidity'] for f in forecasts) / len(forecasts)
+        
+        pdf.set_font("Arial", '', 10)
+        pdf.cell(0, 8, txt=f"Day Summary: High {max_temp:.1f}°C / Low {min_temp:.1f}°C | Humidity: {avg_humidity:.1f}%", ln=True)
+        
+        # Add hourly breakdown
+        pdf.set_font("Arial", 'I', 10)
+        for forecast in forecasts[:4]:  # Show first 4 time periods
+            time = datetime.fromtimestamp(forecast['dt']).strftime('%H:%M')
+            temp = forecast['main']['temp'] - 273.15
+            desc = forecast['weather'][0]['description'].title()
+            pdf.cell(0, 6, txt=f"{time}: {temp:.1f}°C, {desc}", ln=True)
+        
+        pdf.ln(5)
+    
+    # Add recommendations based on weather
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(200, 10, txt="Weather Recommendations", ln=True)
+    pdf.set_font("Arial", '', 12)
+    
+    if 'rain' in weather_desc.lower():
+        recommendations = [
+            "☔ Carry an umbrella or raincoat",
+            "🚗 Allow extra time for travel as roads may be wet",
+            "👟 Wear waterproof footwear",
+            "📱 Check for weather alerts before going out"
+        ]
+    elif current_temp < 10:
+        recommendations = [
+            "🧥 Wear warm layers including a coat",
+            "🧤 Don't forget gloves and a hat",
+            "🚗 Check your vehicle's antifreeze levels",
+            "🏠 Ensure your heating system is working properly"
+        ]
+    else:
+        recommendations = [
+            "🧴 Apply sunscreen if going outside",
+            "💧 Stay hydrated throughout the day",
+            "👒 Wear a hat to protect from the sun",
+            "🕶️ Consider sunglasses for eye protection"
+        ]
+    
+    for rec in recommendations:
+        pdf.cell(0, 8, txt=f"• {rec}", ln=True)
+    
+    # Add footer
+    pdf.ln(15)
+    pdf.set_font("Arial", 'I', 8)
+    pdf.cell(0, 10, txt=f"Report generated on {datetime.now().strftime('%Y-%m-%d %H:%M')}", ln=True, align='C')
+    
+    path = "forecast_report.pdf"
     pdf.output(path)
     return path
 
