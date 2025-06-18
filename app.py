@@ -11,22 +11,34 @@ import pandas as pd
 if 'get_weather' not in st.session_state:
     st.session_state.get_weather = False
 
-# Load API keys
-weather_api_key = st.secrets["WAK"]
-huggingface_api_key = st.secrets["HAK"]
+# Load API keys safely
+try:
+    weather_api_key = st.secrets["WAK"]
+    huggingface_api_key = st.secrets["HAK"]
+except Exception as e:
+    st.error(f"Error loading API keys: {str(e)}")
+    weather_api_key = ""
+    huggingface_api_key = ""
 
 # Load Lottie animations
-def load_lottieurl(url):
-    r = requests.get(url)
-    if r.status_code != 200:
-        return None
-    return r.json()
+def load_lottieurl(url, max_retries=3):
+    for _ in range(max_retries):
+        try:
+            r = requests.get(url, timeout=10)
+            if r.status_code == 200:
+                return r.json()
+        except Exception:
+            continue
+    return None
 
-# Lottie animation URLs
-lottie_rainy = load_lottieurl("https://assets8.lottiefiles.com/packages/lf20_kcsr6fcp.json")
-lottie_sunny = load_lottieurl("https://assets4.lottiefiles.com/packages/lf20_pmvvvcdb.json")
-lottie_cloudy = load_lottieurl("https://assets2.lottiefiles.com/packages/lf20_1pxqjqps.json")
-lottie_weather = load_lottieurl("https://assets10.lottiefiles.com/packages/lf20_5tkzkblw.json")
+try:
+    lottie_rainy = load_lottieurl("https://assets8.lottiefiles.com/packages/lf20_kcsr6fcp.json")
+    lottie_sunny = load_lottieurl("https://assets4.lottiefiles.com/packages/lf20_pmvvvcdb.json")
+    lottie_cloudy = load_lottieurl("https://assets2.lottiefiles.com/packages/lf20_1pxqjqps.json")
+    lottie_weather = load_lottieurl("https://assets10.lottiefiles.com/packages/lf20_5tkzkblw.json")
+except Exception as e:
+    st.warning(f"Could not preload some animations: {str(e)}")
+    lottie_rainy = lottie_sunny = lottie_cloudy = lottie_weather = None
 
 # Function to get current weather data
 def get_weather_data(city, weather_api_key):
@@ -219,12 +231,15 @@ def main():
         """, unsafe_allow_html=True)
 
     # Sidebar with animation
-    with st.sidebar:
-        generic_animation = load_lottieurl("https://assets10.lottiefiles.com/packages/lf20_5tkzkblw.json")
-        if generic_animation:
-            st_lottie(generic_animation, height=150, key="sidebar")
-        else:
-            st.warning("⚠️ Could not load sidebar animation.")
+     with st.sidebar:
+        try:
+            generic_animation = load_lottieurl("https://assets10.lottiefiles.com/packages/lf20_5tkzkblw.json")
+            if generic_animation:
+                st_lottie(generic_animation, height=150, key="sidebar")
+            else:
+                st.warning("⚠️ Could not load sidebar animation.")
+        except Exception as e:
+            st.warning(f"Sidebar animation error: {str(e)}")
 
         st.title("🌦 Weather Forecast")
         city = st.text_input("Enter city name", "London", key="city_input")
