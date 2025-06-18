@@ -1,5 +1,6 @@
 streamlit
+streamlit-lottie
 requests
 fpdf
 matplotlib
-streamlit-lottie
+pandas
