@@ -7,239 +7,313 @@ import matplotlib.pyplot as plt
 import os
 from streamlit_lottie import st_lottie
 import pandas as pd
-from io import BytesIO
 
-# Initialize session state
 if 'get_weather' not in st.session_state:
     st.session_state.get_weather = False
 
-# Load API keys safely
-try:
-    weather_api_key = st.secrets["WAK"]
-    huggingface_api_key = st.secrets["HAK"]
-except Exception as e:
-    st.error(f"Error loading API keys: {str(e)}")
-    weather_api_key = ""
-    huggingface_api_key = ""
+# Load API keys
+weather_api_key = st.secrets["WAK"]
+huggingface_api_key = st.secrets["HAK"]
 
-# Load Lottie animations with retry logic
-def load_lottieurl(url, max_retries=3):
-    for _ in range(max_retries):
-        try:
-            r = requests.get(url, timeout=10)
-            if r.status_code == 200:
-                return r.json()
-        except Exception:
-            continue
-    return None
+# Load Lottie animations
+def load_lottieurl(url):
+    r = requests.get(url)
+    if r.status_code != 200:
+        return None
+    return r.json()
 
-# Preload animations
-lottie_rainy = load_lottieurl("https://assets8.lottiefiles.com/packages/lf20_kcsr6fcp.json")
-lottie_sunny = load_lottieurl("https://assets4.lottiefiles.com/packages/lf20_pmvvvcdb.json")
-lottie_cloudy = load_lottieurl("https://assets2.lottiefiles.com/packages/lf20_1pxqjqps.json")
+# Lottie animation URLs
 lottie_weather = load_lottieurl("https://assets10.lottiefiles.com/packages/lf20_5tkzkblw.json")
+lottie_sunny = load_lottieurl("https://assets4.lottiefiles.com/packages/lf20_pmvvvcdb.json")
+lottie_rainy = load_lottieurl("https://assets8.lottiefiles.com/packages/lf20_kcsr6fcp.json")
+lottie_cloudy = load_lottieurl("https://assets2.lottiefiles.com/packages/lf20_1pxqjqps.json")
 
-# Functions
-def get_weather_data(city, api_key):
-    url = f"http://api.openweathermap.org/data/2.5/weather?appid={api_key}&q={city}"
-    return requests.get(url).json()
+# Function to get current weather data
+def get_weather_data(city, weather_api_key):
+    base_url = "http://api.openweathermap.org/data/2.5/weather?"
+    complete_url = f"{base_url}appid={weather_api_key}&q={city}"
+    response = requests.get(complete_url)
+    return response.json()
 
-def get_weekly_forecast(api_key, lat, lon):
-    url = f"https://api.openweathermap.org/data/2.5/forecast?lat={lat}&lon={lon}&appid={api_key}"
-    return requests.get(url).json()
+# Function to get 5-day forecast
+def get_weekly_forecast(weather_api_key, lat, lon):
+    forecast_url = f"https://api.openweathermap.org/data/2.5/forecast?lat={lat}&lon={lon}&appid={weather_api_key}"
+    response = requests.get(forecast_url)
+    return response.json()
 
-# Helper to choose icon for weather
-def get_icon_path(desc):
-    desc = desc.lower()
-    if "clear" in desc:
-        return "icons/sunny.png"
-    elif "rain" in desc:
-        return "icons/rainy.png"
-    elif "cloud" in desc:
-        return "icons/cloudy.png"
-    else:
-        return "icons/weather.png"  # default icon
-
-# Function to generate PDF with images, AI summary, and chart
-def generate_forecast_pdf(data, summary_text):
+# Function to generate forecast PDF
+def generate_forecast_pdf(forecast_data):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", size=14)
-    pdf.cell(200, 10, txt="Weekly Weather Forecast 📅", ln=True, align='C')
     pdf.set_font("Arial", size=12)
+    pdf.cell(200, 10, txt="Weekly Weather Forecast", ln=True, align='C')
     pdf.ln()
 
-    # Metadata
-    city = data['city']['name']
-    country = data['city']['country']
-    now = datetime.now().strftime("%A, %B %d, %Y %I:%M %p")
-    pdf.cell(0, 10, txt=f"Location: {city}, {country}", ln=True)
-    pdf.cell(0, 10, txt=f"Report Generated: {now}", ln=True)
-    pdf.ln(5)
+    displayed_dates = set()
 
-    # Add daily forecast with icons
-    seen_dates = set()
-    for item in data['list']:
+    for item in forecast_data['list']:
         date = datetime.fromtimestamp(item['dt']).strftime('%A, %B %d')
-        if date not in seen_dates:
-            seen_dates.add(date)
+        if date not in displayed_dates:
+            displayed_dates.add(date)
             min_temp = item['main']['temp_min'] - 273.15
             max_temp = item['main']['temp_max'] - 273.15
-            desc = item['weather'][0]['description'].title()
-            icon_path = get_icon_path(desc)
+            description = item['weather'][0]['description']
+            pdf.cell(0, 10, txt=f"{date} - {description.title()} - Min: {min_temp:.1f}C Max: {max_temp:.1f}C", ln=True)
 
-            # Icon
-            if os.path.exists(icon_path):
-                pdf.image(icon_path, x=10, y=pdf.get_y(), w=10, h=10)
-                pdf.set_xy(22, pdf.get_y())
+    path = "forecast.pdf"
+    pdf.output(path)
+    return path
 
-            # Forecast line (removed `ln=True`)
-            pdf.multi_cell(0, 10, f"{date} - {desc} - Min: {min_temp:.1f}°C Max: {max_temp:.1f}°C")
-            pdf.ln(1)
-
-    # Add weather chart
-    pdf.add_page()
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(200, 10, txt="📈 Temperature Forecast Chart", ln=True, align='C')
-
-    # Plot chart and save as temp
-    dates = []
-    temps = []
-    for item in data['list']:
-        dates.append(datetime.fromtimestamp(item['dt']).strftime('%d %b %H:%M'))
-        temps.append(item['main']['temp'] - 273.15)
-
-    plt.figure(figsize=(10, 4))
-    plt.plot(dates, temps, marker='o', color='blue')
-    plt.xticks(rotation=45)
-    plt.title("Hourly Forecast")
-    plt.xlabel("Time")
-    plt.ylabel("Temperature (°C)")
-    plt.tight_layout()
-    plt.grid(True)
-    chart_path = "forecast_chart_temp.png"
-    plt.savefig(chart_path, dpi=150)
-    plt.close()
-
-    if os.path.exists(chart_path):
-        pdf.image(chart_path, x=10, y=40, w=180)
-
-    # AI Summary
-    pdf.add_page()
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(200, 10, txt="🤖 AI-Generated Weather Summary", ln=True, align='C')
-    pdf.set_font("Arial", '', 12)
-    pdf.multi_cell(0, 10, summary_text or "No summary available.")
-    pdf.ln(2)
-
-    # Save PDF
-    output_path = "forecast_enhanced.pdf"
-    pdf.output(output_path)
-    return output_path
-
+# Function to display forecast chart
 def display_forecast_chart(data):
     dates = []
     temps = []
+    weather_icons = []
+
     for item in data['list']:
         dt = datetime.fromtimestamp(item['dt']).strftime('%d %b %H:%M')
         temp = item['main']['temp'] - 273.15
+        icon = item['weather'][0]['icon']
         dates.append(dt)
         temps.append(temp)
+        weather_icons.append(icon)
 
     plt.figure(figsize=(12, 6))
-    plt.plot(dates, temps, marker='o', color='#4CAF50')
+    plt.plot(dates, temps, marker='o', color='#4CAF50', linewidth=2, markersize=8)
     plt.xticks(rotation=45)
-    plt.title("5-Day Temperature Forecast")
+    plt.title("5-Day Temperature Forecast", fontsize=14, pad=20)
+    plt.xlabel("DateTime", fontsize=12)
+    plt.ylabel("Temperature (Celsius)", fontsize=12)
     plt.tight_layout()
-    plt.grid(True)
+    plt.grid(True, linestyle='--', alpha=0.7)
     plt.savefig("forecast_chart.png", transparent=True)
     st.image("forecast_chart.png")
 
-def generate_weather_description(data, api_key):
+# Hugging Face AI Summary Function
+def generate_weather_description(data, huggingface_api_key):
     try:
-        temp = data['main']['temp'] - 273.15
-        desc = data['weather'][0]['description']
-        prompt = f"The current weather is {desc} at {temp:.1f}°C. Explain this simply."
-        response = requests.post(
-            "https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            },
-            json={"inputs": prompt, "parameters": {"max_new_tokens": 60}}
-        )
-        result = response.json()
-        if isinstance(result, list) and 'generated_text' in result[0]:
-            return result[0]['generated_text'].strip()
-        return "Weather summary unavailable."
-    except Exception:
-        return "AI summary failed."
+        temperature = data['main']['temp'] - 273.15
+        description = data['weather'][0]['description']
+        prompt = f"The current weather in your city is {description} with a temperature of {temperature:.1f}C. Explain this in a simple way."
 
-def get_weather_animation(condition):
-    if not condition: return lottie_weather
-    cond = condition.lower()
-    if 'rain' in cond: return lottie_rainy
-    if 'clear' in cond: return lottie_sunny
-    if 'cloud' in cond: return lottie_cloudy
-    return lottie_weather
+        api_url = "https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta"
+        headers = {
+            "Authorization": f"Bearer {huggingface_api_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "inputs": prompt,
+            "parameters": {"max_new_tokens": 60}
+        }
 
-# Main Streamlit App
+        response = requests.post(api_url, headers=headers, json=payload)
+
+        if response.status_code == 200:
+            try:
+                result = response.json()
+                if isinstance(result, list) and 'generated_text' in result[0]:
+                    return result[0]['generated_text'].strip()
+                else:
+                    return json.dumps(result)
+            except json.JSONDecodeError:
+                return "AI Summary Error: Invalid JSON received from Hugging Face."
+        else:
+            return f"Hugging Face API error: {response.status_code} - {response.text}"
+
+    except Exception as e:
+        return f"AI Summary Error: {str(e)}"
+
+# Get appropriate weather animation
+def get_weather_animation(weather_condition):
+    if 'rain' in weather_condition.lower():
+        return lottie_rainy
+    elif 'clear' in weather_condition.lower():
+        return lottie_sunny
+    elif 'cloud' in weather_condition.lower():
+        return lottie_cloudy
+    else:
+        return lottie_weather
+
+# Streamlit app
 def main():
-    st.set_page_config(page_title="Weather Forecast with AI", page_icon="🌦", layout="centered")
+    st.set_page_config(
+        page_title="Weather Forecast with AI", 
+         page_icon="🌦",
+        layout="centered", 
+        initial_sidebar_state="expanded"
+    )
+    
+    # Custom CSS for animations and styling
+    st.markdown("""
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap');
+        
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: #f5f7fa;
+            color: #333;
+        }
+        
+        .stApp {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        }
+        
+        .metric-container {
+            background: white;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 10px 0;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+        }
+        
+        .metric-container:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 15px rgba(0,0,0,0.1);
+        }
+        
+        .metric-value {
+            font-size: 24px !important;
+            font-weight: 600 !important;
+            color: #4CAF50 !important;
+        }
+        
+        .metric-label {
+            font-size: 14px !important;
+            color: #666 !important;
+        }
+        
+        .stButton>button {
+            background: linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 24px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        .stButton>button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 15px rgba(46, 125, 50, 0.4);
+        }
+        
+        .stTextInput>div>div>input {
+            border-radius: 8px !important;
+            padding: 10px !important;
+        }
+        
+        .stMarkdown h1 {
+            color: #2E7D32;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        .stMarkdown h2 {
+            color: #4CAF50;
+            border-bottom: 2px solid #4CAF50;
+            padding-bottom: 5px;
+            margin-top: 30px;
+        }
+        </style>
+        """, unsafe_allow_html=True)
 
-    # Sidebar
+     # Sidebar with animation
     with st.sidebar:
-        try:
-            generic_animation = load_lottieurl("https://assets10.lottiefiles.com/packages/lf20_5tkzkblw.json")
-            if generic_animation:
-                st_lottie(generic_animation, height=150, key="sidebar")
-        except Exception:
-            st.warning("Could not load sidebar animation.")
-
+        st_lottie(lottie_weather, height=150, key="sidebar")
         st.title("🌦 Weather Forecast")
-        city = st.text_input("Enter city name", "London")
-        if st.button("Get Weather"):
+        city = st.text_input("Enter city name", "London", key="city_input")
+        
+        if st.button("Get Weather", key="get_weather_btn"):
             st.session_state.get_weather = True
 
-    # Main logic
-    if st.session_state.get_weather and city:
-        st.title(f"Weather in {city}")
-        with st.spinner("Fetching weather data..."):
-            weather = get_weather_data(city, weather_api_key)
-            if weather.get("cod") != 200:
-                st.error(weather.get("message", "Could not fetch weather."))
-                return
+    if st.session_state.get_weather:
+        st.title(f"🌆 Weather updates for {city}")
+        with st.spinner('Fetching weather data...'):
+            weather_data = get_weather_data(city, weather_api_key)
 
-            anim = get_weather_animation(weather['weather'][0]['main'])
-            col1, col2 = st.columns([1, 2])
-            with col1:
-                if anim: st_lottie(anim, height=200)
-            with col2:
-                st.subheader("Current Weather")
-                st.write(weather['weather'][0]['description'].title())
+            if weather_data.get("cod") == 200:
+                # Display weather animation
+                weather_condition = weather_data['weather'][0]['main']
+                animation = get_weather_animation(weather_condition)
+                
+                col1, col2 = st.columns([1, 2])
+                with col1:
+                    st_lottie(animation, height=200, key="weather_anim")
+                
+                with col2:
+                    st.markdown(f"""
+                    <div style="background: white; border-radius: 10px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                        <h2 style="color: #4CAF50; margin-top: 0;">Current Weather</h2>
+                        <p style="font-size: 18px;">{weather_data['weather'][0]['description'].title()}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
 
-            st.metric("Temperature", f"{weather['main']['temp'] - 273.15:.1f} °C")
-            st.metric("Humidity", f"{weather['main']['humidity']}%")
-            st.metric("Pressure", f"{weather['main']['pressure']} hPa")
-            st.metric("Wind Speed", f"{weather['wind']['speed']} m/s")
+                # Metrics
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.markdown(f"""
+                    <div class="metric-container">
+                        <div class="metric-label">Temperature</div>
+                        <div class="metric-value">{weather_data['main']['temp'] - 273.15:.1f} °C</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col2:
+                    st.markdown(f"""
+                    <div class="metric-container">
+                        <div class="metric-label">Humidity</div>
+                        <div class="metric-value">{weather_data['main']['humidity']}%</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col3:
+                    st.markdown(f"""
+                    <div class="metric-container">
+                        <div class="metric-label">Pressure</div>
+                        <div class="metric-value">{weather_data['main']['pressure']} hPa</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col4:
+                    st.markdown(f"""
+                    <div class="metric-container">
+                        <div class="metric-label">Wind Speed</div>
+                        <div class="metric-value">{weather_data['wind']['speed']} m/s</div>
+                    </div>
+                    """, unsafe_allow_html=True)
 
-            try:
-                lat, lon = weather['coord']['lat'], weather['coord']['lon']
-                forecast = get_weekly_forecast(weather_api_key, lat, lon)
-                if forecast.get("cod") == "200":
-                    st.subheader("Forecast Chart")
-                    display_forecast_chart(forecast)
+                lat = weather_data['coord']['lat']
+                lon = weather_data['coord']['lon']
 
-                    st.subheader("AI Summary")
-                    summary = generate_weather_description(weather, huggingface_api_key)
-                    st.write(summary)
+                forecast_data = get_weekly_forecast(weather_api_key, lat, lon)
+                if forecast_data.get("cod") != "404":
+                    st.subheader("📈 Forecast Chart")
+                    display_forecast_chart(forecast_data)
 
-                    pdf_path = generate_forecast_pdf(forecast, summary)
-                    with open(pdf_path, "rb") as f:
-                        st.download_button("📄 Download Forecast PDF", f, file_name="forecast.pdf")
+                    st.subheader("💬 AI Weather Summary")
+                    with st.spinner('Generating AI summary...'):
+                        description = generate_weather_description(weather_data, huggingface_api_key)
+                        st.markdown(f"""
+                        <div style="background: white; border-radius: 10px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                            <p style="font-size: 16px; line-height: 1.6;">{description}</p>
+                        </div>
+                        """, unsafe_allow_html=True)
 
-            except Exception as e:
-                st.error(f"Forecast error: {str(e)}")
+                    st.subheader("📄 Download Forecast")
+                    pdf_path = generate_forecast_pdf(forecast_data)
+                    with open(pdf_path, "rb") as file:
+                        st.download_button(
+                            "Download Forecast PDF", 
+                            file, 
+                            file_name="forecast.pdf",
+                            key="download_pdf"
+                        )
+                else:
+                    st.error("Couldn't fetch forecast data.")
+            else:
+                st.error(f"Error: {weather_data.get('message', 'Unknown error')}")
 
 if __name__ == "__main__":
     main()
