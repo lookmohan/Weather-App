@@ -198,7 +198,7 @@ def main():
 
         if weather_data.get("cod") == 200:
             weather_condition = weather_data['weather'][0]['main']
-            icon = get_weather_icon(weather_condition)
+            animation = get_weather_animation(weather_condition)
             st.markdown(f"### {icon} {weather_condition.title()}")
 
             col1, col2, col3, col4 = st.columns(4)
