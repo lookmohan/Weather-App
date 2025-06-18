@@ -23,10 +23,15 @@ def load_lottieurl(url):
     return r.json()
 
 # Lottie animation URLs
-lottie_weather = load_lottieurl("https://assets10.lottiefiles.com/packages/lf20_5tkzkblw.json")
-lottie_sunny = load_lottieurl("https://assets4.lottiefiles.com/packages/lf20_pmvvvcdb.json")
-lottie_rainy = load_lottieurl("https://assets8.lottiefiles.com/packages/lf20_kcsr6fcp.json")
-lottie_cloudy = load_lottieurl("https://assets2.lottiefiles.com/packages/lf20_1pxqjqps.json")
+def get_weather_animation(weather_condition):
+    if 'rain' in weather_condition.lower():
+        return load_lottieurl("https://assets8.lottiefiles.com/packages/lf20_kcsr6fcp.json")
+    elif 'clear' in weather_condition.lower():
+        return load_lottieurl("https://assets4.lottiefiles.com/packages/lf20_pmvvvcdb.json")
+    elif 'cloud' in weather_condition.lower():
+        return load_lottieurl("https://assets2.lottiefiles.com/packages/lf20_1pxqjqps.json")
+    else:
+        return load_lottieurl("https://assets10.lottiefiles.com/packages/lf20_5tkzkblw.json")
 
 # Function to get current weather data
 def get_weather_data(city, weather_api_key):
