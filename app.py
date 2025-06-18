@@ -225,7 +225,12 @@ def main():
 
      # Sidebar with animation
     with st.sidebar:
-        st_lottie(lottie_weather, height=150, key="sidebar")
+       generic_animation = load_lottieurl("https://assets10.lottiefiles.com/packages/lf20_5tkzkblw.json")
+        if generic_animation:
+            st_lottie(generic_animation, height=150, key="sidebar")
+        else:
+            st.warning("⚠️ Could not load sidebar animation.")
+
         st.title("🌦 Weather Forecast")
         city = st.text_input("Enter city name", "London", key="city_input")
         
