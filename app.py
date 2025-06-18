@@ -93,6 +93,7 @@ def generate_forecast_pdf(data, summary_text):
                 pdf.image(icon_path, x=10, y=pdf.get_y(), w=10, h=10)
                 pdf.set_xy(22, pdf.get_y())
 
+            # Forecast line (removed `ln=True`)
             pdf.multi_cell(0, 10, f"{date} - {desc} - Min: {min_temp:.1f}°C Max: {max_temp:.1f}°C")
             pdf.ln(1)
 
@@ -129,6 +130,7 @@ def generate_forecast_pdf(data, summary_text):
     pdf.cell(200, 10, txt="🤖 AI-Generated Weather Summary", ln=True, align='C')
     pdf.set_font("Arial", '', 12)
     pdf.multi_cell(0, 10, summary_text or "No summary available.")
+    pdf.ln(2)
 
     # Save PDF
     output_path = "forecast_enhanced.pdf"
